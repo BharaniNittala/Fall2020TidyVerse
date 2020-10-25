@@ -1,0 +1,193 @@
+---
+title: 'Assignment: TidyVerse CREATE assignment'
+author: "Bharani Nittala"
+date: "`r Sys.Date()`"
+output:
+  openintro::lab_report: default
+  pdf_document: default
+  html_document:
+    includes:
+      in_header: header.html
+    css: ./lab.css
+    highlight: pygments
+    theme: cerulean
+    toc: yes
+    toc_float: yes
+  word_document:
+    toc: yes
+editor_options:
+  chunk_output_type: console
+---
+
+### Overview
+
+Using one or more TidyVerse packages, and any dataset from fivethirtyeight.com or Kaggle, create a programming sample “vignette” that demonstrates how to use one or more of the capabilities of the selected TidyVerse package with your selected dataset. In this case I selected Kaggle 'COVID' datset from [Kaggle](https://www.kaggle.com/fireballbyedimyrnmom/us-counties-covid-19-dataset). The original dataset is from NY times.    
+
+
+### Load required libraries
+
+Step 1 is to install and load required libraries to extract data from NY times GIT library
+
+```{r libraries, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(eval = TRUE, results = FALSE)
+library(tidyverse)
+library(kableExtra)
+library(rmarkdown)
+library(RCurl)
+
+```
+
+#### The default packages loaded from the library 'tidyverse' are *ggplot2*, *purrr*,*tibble*,*dplyr*, *tidyr*, *stringr*,*readr*,*forcats*. My focus is on **ggplot2** and **dplyr**
+
+We will use read.csv() function from readr() package when we load the dataset. 
+
+
+### Load the dataset
+
+Raw data looks like this:
+```{r , message=FALSE,echo= FALSE}
+covid_county_url <- getURL("https://raw.githubusercontent.com/nytimes/covid-19-data/master/us-counties.csv") 
+covid_county_raw <- read.csv(text = covid_county_url)
+
+head(covid_county_raw,5) %>% kable() %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed"), fixed_thead = T)
+```
+
+It contains time series data containing cumulative counts of coronavirus cases in the United States, at the state and county level, over time.
+
+
+### Data exploration using dplyr
+
+\n
+1) Filter function in dplyr()
+ 
+**Description**
+Use filter() to choose rows/cases where conditions are true. Unlike base subsetting with [, rows where the condition evaluates to NA are dropped.
+```{r , message=FALSE,results="asis"}
+covid_county_latest = filter(covid_county_raw,date == max(covid_county_raw$date))
+head(covid_county_latest,5) %>% kable() %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed"), fixed_thead = T)
+```
+
+Now we have latest county level COVID data in the dataset covid_county_latest
+
+2) Arrange and group_by functions in dplyr()
+\n 
+
+**Description**
+Order tbl rows by an expression involving its variables.Most data operations are done on groups defined by variables. group_by() takes an existing tbl and converts it into a grouped tbl where operations are performed "by group". ungroup() removes grouping.
+```{r , message=FALSE,results="asis"}
+covid_county_latest <- covid_county_latest %>% group_by(state)  %>% arrange(desc(cases), .by_group = TRUE)
+head(covid_county_latest,5) %>% kable() %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed"), fixed_thead = T)
+```
+
+We obtained COVID cases sorted by each state from highest to lowest in each of the counties. 
+
+\n
+3) Select and rename functions in dplyr()
+
+**Description**
+Choose or rename variables from a tbl. select() keeps only the variables you mention; rename() keeps all variables
+```{r , message=FALSE,results="asis"}
+covid_county_latest <- covid_county_latest%>%select(county,state,cases,deaths)
+covid_county_latest <- rename(covid_county_latest,covid_cases = cases,covid_deaths = deaths)
+head(covid_county_latest,5) %>% kable() %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed"), fixed_thead = T)
+```
+
+Selected only the required columns and renamed the columns so that it's more intuitive to understand.
+
+\n
+4) Summarize function in dplyr()
+
+**Description**
+Create one or more scalar variables summarizing the variables of an existing tbl. Tbls with groups created by group_by() will result in one row in the output for each group. Tbls with no groups will result in one row.
+```{r , message=FALSE,results="asis"}
+
+covid_state <- covid_county_latest %>% group_by(state) %>% summarise(US_cases = sum(covid_cases),US_deaths = sum(covid_deaths)) %>%  arrange(desc(US_cases), .by_group = TRUE)
+head(covid_state,5) %>% kable() %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed"), fixed_thead = T)
+
+```
+
+Note that here, we obtained COVID cases by state by applying multiple functions such as arrange,group_by and summarise. 
+
+5) Mutate function in dplyr()
+
+**Description**
+mutate() adds new variables and preserves existing ones; transmute() adds new variables and drops existing ones. Both functions preserve the number of rows of the input. New variables overwrite existing variables of the same name.
+```{r , message=FALSE,results="asis"}
+
+covid_state <- covid_state %>% mutate(mortality_rate = round((US_deaths*100)/US_cases,1),cases_density = round(US_cases*100/sum(US_cases),1)) 
+head(covid_state,5) %>% kable() %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed"), fixed_thead = T)
+
+```
+
+
+Mortality rate metric defined as deaths per cases is a better metric to understand the impact of COVID pandemic. 
+
+### Visualization
+
+1) ggplot function in ggplot2
+\n
+**Description**
+ggplot() initializes a ggplot object. It can be used to declare the input data frame for a graphic and to specify the set of plot aesthetics intended to be common throughout all subsequent layers unless specifically overridden.
+```{r , message=FALSE,results="asis"}
+
+covid_state %>% arrange(cases_density) %>%  mutate(state = fct_reorder(state, cases_density)) %>%
+ggplot(aes( x=state,y=cases_density)) + 
+    geom_bar( stat="identity",color="black")+
+    geom_text(aes(label=paste0(cases_density,"%")),color = "orange",hjust=1,vjust=0.3,size = 3)+
+  theme( axis.line = element_line(colour = "black", 
+                      size = 1, linetype = "solid"))+
+  coord_flip()+
+    xlab("")+ ylab("")+
+  theme( axis.line = element_line(colour = "black", 
+                      size =1, linetype = "solid"))+
+   ggtitle("COVID Density Rate in the US States (as of Oct 24 '20)") + 
+     theme(plot.title = element_text(lineheight=.8, face="bold"))
+
+```
+
+The graph shows COVID cases spread by states from highest to lowest order. Let's now plot mortality rate to understand where the cases caused were more deadly. 
+
+```{r , message=FALSE,results="asis"}
+
+covid_state %>% arrange(mortality_rate) %>%  mutate(state = fct_reorder(state, mortality_rate)) %>%
+ggplot(aes( x=state,y=mortality_rate)) + 
+    geom_bar( stat="identity",color="black")+
+    geom_text(aes(label=paste0(mortality_rate,"%")),color = "orange",hjust=1,vjust=0.3,size = 3)+
+  theme( axis.line = element_line(colour = "black", 
+                      size = 1, linetype = "solid"))+
+  coord_flip()+
+    xlab("")+ ylab("")+
+  theme( axis.line = element_line(colour = "black", 
+                      size = 1, linetype = "solid"))+
+   ggtitle("COVID Mortality Rate in the US States (as of Oct 24 '20)") + 
+     theme(plot.title = element_text(lineheight=.8, face="bold"))
+
+```
+
+2) geom_smooth function in ggplot2
+\n
+**Description**
+Aids the eye in seeing patterns in the presence of overplotting. geom_smooth() and stat_smooth() are effectively aliases: they both use the same arguments. Use stat_smooth() if you want to display the results with a non-standard geom.
+```{r , message=FALSE,results="asis"}
+
+ggplot(covid_state, aes(x = mortality_rate , y= cases_density)) + geom_point() + geom_smooth(method=lm)+
+   ggtitle("COVID Mortality Rate vs COVID Case Density in the US States") + 
+     theme(plot.title = element_text(lineheight=.8, face="bold"))
+
+```
+
+
+### Conclusion
+
+There are three clear outliers which are possibly stopping us from understanding the clear relation between mortality rate and case density.
+
+After removing the outliers, the distribution seems more linear where COVID mortality rate is higher in the states with higher COVID density. 
+```{r , message=FALSE,results="asis"}
+
+ggplot(subset(covid_state,cases_density <6), aes(x = mortality_rate , y= cases_density)) + geom_point() + geom_smooth(method= lm)+
+   ggtitle("COVID Mortality Rate vs COVID Case Density in the US States") + 
+     theme(plot.title = element_text(lineheight=.8, face="bold"))
+
+```
+
+
